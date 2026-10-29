@@ -1,0 +1,21 @@
+{
+  "name": "rewardhub-mvp",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Rewarded sponsored-campaign MVP",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "test": "node test/rewardhub.integration.test.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.10.0",
+    "bcryptjs": "^3.0.2",
+    "express": "^5.1.0",
+    "express-session": "^1.18.2"
+  },
+  "allowScripts": {
+    "better-sqlite3@11.10.0": true
+  }
+}
