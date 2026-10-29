@@ -472,7 +472,7 @@ async function advertiserDashboard() {
         <form id="advertiserCampaignForm"><div class="grid">
           <div><label>Campaign title</label><input name="title" maxlength="150" required></div>
           <div><label>Video file URL</label><input name="videoUrl" type="url" placeholder="https://…/campaign.mp4" required></div>
-          <div><label>Destination URL (optional)</label><input name="destinationUrl" type="url" placeholder="https://…"></div>
+          <div><label>Advertiser link (optional)</label><input name="destinationUrl" type="url" placeholder="https://…" aria-describedby="advertiserDestinationHelp"><small id="advertiserDestinationHelp" class="muted">Add a full website, WhatsApp wa.me, or social link. Tapping the ad opens this link.</small></div>
           <div><label>Video duration (seconds)</label><input name="durationSeconds" type="number" min="1" max="86400" required></div>
           <div><label>Reward per qualifying completion (RC)</label><input name="rewardRc" type="number" min="1" required></div>
           <div><label>Total campaign budget (₦)</label><input name="budgetNgn" type="number" min="1" required></div>
@@ -581,7 +581,7 @@ async function admin() {
           <div><label>Campaign title</label><input name="title" required></div>
           <div><label>Advertiser</label><input name="advertiser" required></div>
           <div><label>Video URL</label><input name="videoUrl" placeholder="https://..." required></div>
-          <div><label>Destination URL</label><input name="destinationUrl" placeholder="https://..."></div>
+          <div><label>Advertiser link (optional)</label><input name="destinationUrl" type="url" placeholder="https://…"><small class="muted">Website, WhatsApp wa.me, or social link. Tapping the ad opens this link.</small></div>
           <div><label>Video duration (seconds)</label><input name="durationSeconds" type="number" min="1" max="86400" required></div>
           <div><label>Reward per completion (₦)</label><input name="reward" type="number" min="1" required></div>
           <div><label>Campaign budget (₦)</label><input name="budget" type="number" min="1" required></div>
