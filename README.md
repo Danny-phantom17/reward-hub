@@ -49,7 +49,7 @@ Set these values in Railway's service variables before the first production depl
 - `ADVERTISER_FUNDING_INSTRUCTIONS`: your verified bank account and transfer instructions for advertisers.
 - `RESEND_API_KEY`, `EMAIL_FROM`, and `APP_BASE_URL`: verified Resend sender details and the deployed HTTPS origin for password recovery.
 
-`NODE_ENV` and `DATABASE_PATH` are set by the Railway configuration. Do not commit these secret values or the SQLite database. On a new Railway volume, the app starts with a new database; transfer existing database contents only if you explicitly need them.
+Use [`railway-variables.example`](railway-variables.example) as the copy-ready variable-name checklist; replace every placeholder with your own values and enter them in Railway's Variables screen. Generate unique random secrets for the admin password, session secret, and bank encryption key. Do not send or commit those values. Railway supplies the public domain after the service is created, so set `APP_BASE_URL` to that HTTPS domain before enabling password recovery. `NODE_ENV` and `DATABASE_PATH` are set by the Railway configuration. On a new Railway volume, the app starts with a new database; transfer existing database contents only if you explicitly need them.
 
 ## Current product behavior
 

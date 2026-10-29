@@ -1,0 +1,16 @@
+NODE_ENV=production
+DATABASE_PATH=/data/rewardhub.db
+
+# Set these secrets in Railway before the first production deploy.
+ADMIN_EMAIL=your-admin-email@example.com
+ADMIN_PASSWORD=REPLACE_WITH_YOUR_UNIQUE_PASSWORD_AT_LEAST_12_CHARACTERS
+SESSION_SECRET=REPLACE_WITH_A_RANDOM_SECRET_AT_LEAST_32_CHARACTERS
+BANK_DETAILS_ENCRYPTION_KEY=REPLACE_WITH_A_LONG_RANDOM_SECRET_AND_KEEP_A_BACKUP
+
+# Your verified receiving account and transfer instructions, on one line.
+ADVERTISER_FUNDING_INSTRUCTIONS=REPLACE_WITH_YOUR_BANK_AND_TRANSFER_INSTRUCTIONS
+
+# Required for password recovery email.
+RESEND_API_KEY=REPLACE_WITH_YOUR_RESEND_API_KEY
+EMAIL_FROM=RewardHub <no-reply@your-verified-domain.example>
+APP_BASE_URL=https://REPLACE_WITH_YOUR_RAILWAY_PUBLIC_DOMAIN

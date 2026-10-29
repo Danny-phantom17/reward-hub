@@ -281,7 +281,10 @@ async function watch(id) {
       <h1>${escapeHtml(c.title)}</h1>
       <p class="muted">${escapeHtml(c.description)}</p>
       <div class="notice"><strong>Eligibility</strong><br>${escapeHtml(c.qualifying_rules)}<br><span class="metric-caption">The platform checks elapsed time and a single attempt per account. This is not independent proof of external actions.</span></div>
-      <video id="adVideo" controls playsinline src="${escapeHtml(c.video_url)}"></video>
+      <div class="ad-video-wrap">
+        <video id="adVideo" controls playsinline src="${escapeHtml(c.video_url)}"></video>
+        ${c.destination_url ? `<button id="adCloseButton" class="ad-close-button" type="button" aria-label="Close video and visit advertiser" title="Visit advertiser" hidden>×</button>` : ""}
+      </div>
       <div class="row" style="margin-top:18px">
         <span>Reward: <strong>${Number(c.reward).toLocaleString()} RC</strong></span>
         <span id="watchStatus" class="muted">Watch the campaign to completion.</span>
@@ -294,8 +297,39 @@ async function watch(id) {
 
   const video = document.getElementById("adVideo");
   const claim = document.getElementById("claimBtn");
+  const closeButton = document.getElementById("adCloseButton");
   let watchSession = null;
   let watched = 0;
+  const openAdvertiser = () => {
+    if (!c.destination_url) return;
+    window.open(c.destination_url, "_blank", "noopener,noreferrer");
+  };
+
+  if (c.destination_url) {
+    video.addEventListener("click", event => {
+      // Keep the native control strip usable. Taps on the playing video open the sponsor.
+      const bounds = video.getBoundingClientRect();
+      if (event.clientY >= bounds.bottom - 52) return;
+      // A tap while paused is allowed to start/resume playback.
+      if (video.paused && !video.ended) return;
+      openAdvertiser();
+    });
+
+    const updateCloseButton = () => {
+      const hasDuration = Number.isFinite(video.duration) && video.duration > 0;
+      closeButton.hidden = !(hasDuration && video.duration - video.currentTime <= 1 && !video.ended);
+    };
+    video.addEventListener("timeupdate", updateCloseButton);
+    video.addEventListener("durationchange", updateCloseButton);
+    video.addEventListener("ended", () => { closeButton.hidden = true; });
+    closeButton.addEventListener("click", () => {
+      video.pause();
+      if (Number.isFinite(video.duration) && video.duration > 0) video.currentTime = video.duration;
+      closeButton.hidden = true;
+      openAdvertiser();
+    });
+  }
+
   video.addEventListener("loadedmetadata", async () => {
     try {
       watchSession = await api("/api/campaigns/" + id + "/start", {
