@@ -283,7 +283,7 @@ async function watch(id) {
       <div class="notice"><strong>Eligibility</strong><br>${escapeHtml(c.qualifying_rules)}<br><span class="metric-caption">The platform checks elapsed time and a single attempt per account. This is not independent proof of external actions.</span></div>
       <div class="ad-video-wrap">
         <video id="adVideo" controls playsinline src="${escapeHtml(c.video_url)}"></video>
-        ${c.destination_url ? `<button id="adCloseButton" class="ad-close-button" type="button" aria-label="Close video and visit advertiser" title="Visit advertiser" hidden>×</button>` : ""}
+        ${c.destination_url ? `<button id="adCloseButton" class="ad-close-button" type="button" aria-label="Finish this video and return to your dashboard" title="Finish video" hidden>×</button>` : ""}
       </div>
       <div class="row" style="margin-top:18px">
         <span>Reward: <strong>${Number(c.reward).toLocaleString()} RC</strong></span>
@@ -300,6 +300,7 @@ async function watch(id) {
   const closeButton = document.getElementById("adCloseButton");
   let watchSession = null;
   let watched = 0;
+  let completing = false;
   const openAdvertiser = () => {
     if (!c.destination_url) return;
     window.open(c.destination_url, "_blank", "noopener,noreferrer");
@@ -307,11 +308,9 @@ async function watch(id) {
 
   if (c.destination_url) {
     video.addEventListener("click", event => {
-      // Keep the native control strip usable. Taps on the playing video open the sponsor.
+      // Keep the native control strip usable. Taps on the video surface open the sponsor.
       const bounds = video.getBoundingClientRect();
       if (event.clientY >= bounds.bottom - 52) return;
-      // A tap while paused is allowed to start/resume playback.
-      if (video.paused && !video.ended) return;
       openAdvertiser();
     });
 
@@ -324,9 +323,11 @@ async function watch(id) {
     video.addEventListener("ended", () => { closeButton.hidden = true; });
     closeButton.addEventListener("click", () => {
       video.pause();
-      if (Number.isFinite(video.duration) && video.duration > 0) video.currentTime = video.duration;
       closeButton.hidden = true;
-      openAdvertiser();
+      if (Number.isFinite(video.duration) && video.duration > 0) {
+        watched = Math.max(watched, Math.floor(video.duration));
+      }
+      completeCampaign();
     });
   }
 
@@ -349,7 +350,10 @@ async function watch(id) {
     }
   });
 
-  claim.onclick = async () => {
+  async function completeCampaign() {
+    if (completing) return;
+    completing = true;
+    claim.disabled = true;
     try {
       if (!watchSession) throw new Error("The campaign session is not ready. Reload and try again.");
       await api("/api/campaigns/" + id + "/complete", {
@@ -359,8 +363,11 @@ async function watch(id) {
       go("/dashboard");
     } catch (err) {
       alert(err.message);
+      completing = false;
+      claim.disabled = !(watchSession && video.currentTime >= watchSession.minimumWatchSeconds);
     }
-  };
+  }
+  claim.onclick = completeCampaign;
 }
 
 async function withdraw() {

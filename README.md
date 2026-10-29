@@ -55,6 +55,7 @@ Use [`railway-variables.example`](railway-variables.example) as the copy-ready v
 
 - User and advertiser accounts are separate. Advertiser profiles require administrator approval before campaign submission.
 - The MVP supports video visibility campaigns only. Other objectives are intentionally unavailable until reliable measurement is integrated.
+- On a campaign video, tapping the video surface opens the advertiser destination in a new tab; taps on the native control strip remain available for playback. A close X appears during the final second. Tapping it ends the watch, submits the completion for the server's normal checks, and returns to the dashboard; it does not open the advertiser.
 - A submitted completion is a single attempt and must pass a server elapsed-time check, then remains pending until manual review. Elapsed time does not prove genuine playback or attention.
 - Campaigns require administrator approval and full advertiser funding reconciliation before they appear to users. Advertiser transfer references are claims, not proof of payment.
 - Current defaults are 10,000 RC = ₦1,000, a 20,000 RC (₦2,000) minimum withdrawal, 0% withdrawal fee, 50% reward allocation, and 20% variable-cost estimate. Administrators can change settings for future requests. Existing installations on the prior default rate are migrated once; custom values are preserved.
