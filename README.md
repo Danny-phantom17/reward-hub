@@ -34,6 +34,23 @@ For production, use HTTPS, `NODE_ENV=production`, a unique session secret of at 
 
 Password recovery now uses Resend. Configure `RESEND_API_KEY`, `EMAIL_FROM` (a sender verified with Resend), and `APP_BASE_URL` (the public HTTPS origin, without a trailing slash). Recovery links are single-use, expire after 30 minutes, and invalidate existing sessions for that account. Without these email settings, recovery endpoints remain unavailable.
 
+## Deploying on Railway
+
+The `.railway/railway.ts` file defines a single-instance service in Railway's EU West region with a 500 MB persistent volume mounted at `/data`. The database path is set to `/data/rewardhub.db`, so the app's SQLite data survives deployments and restarts. Keep the service at one replica because SQLite and the attached volume are single-instance.
+
+For real users and balances, use Railway Hobby or another paid plan so the service does not depend on the Free plan's small monthly usage credit. Railway Free and Trial volumes are limited to 0.5 GB. Increase the volume before it fills; Railway volumes cannot be downsized after creation.
+
+Set these values in Railway's service variables before the first production deployment:
+
+- `ADMIN_EMAIL`: email used for the initial administrator login.
+- `ADMIN_PASSWORD`: unique initial administrator password, at least 12 characters. It is only used to create the administrator if that email is not already in the database; changing this variable later does not reset an existing account password.
+- `SESSION_SECRET`: random secret of at least 32 characters.
+- `BANK_DETAILS_ENCRYPTION_KEY`: long, unique secret used to encrypt viewer bank details. Keep a secure backup; changing it makes previously stored account details unreadable.
+- `ADVERTISER_FUNDING_INSTRUCTIONS`: your verified bank account and transfer instructions for advertisers.
+- `RESEND_API_KEY`, `EMAIL_FROM`, and `APP_BASE_URL`: verified Resend sender details and the deployed HTTPS origin for password recovery.
+
+`NODE_ENV` and `DATABASE_PATH` are set by the Railway configuration. Do not commit these secret values or the SQLite database. On a new Railway volume, the app starts with a new database; transfer existing database contents only if you explicitly need them.
+
 ## Current product behavior
 
 - User and advertiser accounts are separate. Advertiser profiles require administrator approval before campaign submission.
