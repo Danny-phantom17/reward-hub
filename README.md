@@ -36,7 +36,7 @@ Password recovery now uses Resend. Configure `RESEND_API_KEY`, `EMAIL_FROM` (a s
 
 ## Deploying on Railway
 
-The `.railway/railway.ts` file defines a single-instance service in Railway's EU West region with a 500 MB persistent volume mounted at `/data`. The database path is set to `/data/rewardhub.db`, so the app's SQLite data survives deployments and restarts. Keep the service at one replica because SQLite and the attached volume are single-instance.
+The `.railway/railway.ts` file defines a single-instance service in Railway's EU West region with a 500 MB persistent volume mounted at `/data`. The database path is set to `/data/rewardhub.db`, so the app's SQLite data survives deployments and restarts. Keep the service at one replica because SQLite and the attached volume are single-instance. Railway does not apply this project-level IaC file just because it is present in a GitHub repository. If you want to use it, install/authenticate Railway CLI 5.42.1 or newer, link the local repository to the intended Railway project and environment, then run `railway config plan` and review the proposed changes before `railway config apply`. A GitHub-dashboard-only deployment must instead have the same region, volume, mount path, single replica, healthcheck, and database variables configured in Railway's service settings.
 
 For real users and balances, use Railway Hobby or another paid plan so the service does not depend on the Free plan's small monthly usage credit. Railway Free and Trial volumes are limited to 0.5 GB. Increase the volume before it fills; Railway volumes cannot be downsized after creation.
 

@@ -10,12 +10,15 @@
     "test": "node test/rewardhub.integration.test.js"
   },
   "dependencies": {
-    "better-sqlite3": "^11.10.0",
     "bcryptjs": "^3.0.2",
+    "better-sqlite3": "^11.10.0",
     "express": "^5.1.0",
     "express-session": "^1.18.2"
   },
   "allowScripts": {
     "better-sqlite3@11.10.0": true
+  },
+  "devDependencies": {
+    "railway": "^3.16.0"
   }
 }
