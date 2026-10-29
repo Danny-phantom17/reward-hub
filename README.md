@@ -18,7 +18,7 @@ npm start
 
 Open `http://localhost:3000` (or the port configured with `PORT`). Run the integration suite with `npm test`.
 
-On Windows, double-click `Start RewardHub Locally.bat` to start the app without changing directories in a terminal. It prompts for a local administrator email and password; the password is not saved by the launcher. Keep using the same login to sign in on later runs. The launcher installs dependencies the first time if needed. Open `http://localhost:3000` and press Ctrl+C in the launcher window to stop the server.
+On Windows, double-click `Start RewardHub Locally.bat` to start the app without changing directories in a terminal. It requires Node.js 22.5 or newer, prompts for a local administrator email and password, and does not save the password. Keep using the same login to sign in on later runs. The launcher installs dependencies without running native build scripts; the app uses Node's built-in SQLite fallback if the native SQLite add-on is unavailable. Open `http://localhost:3000` and press Ctrl+C in the launcher window to stop the server.
 
 ## Admin account and secrets
 

@@ -2,20 +2,20 @@ $ErrorActionPreference = "Stop"
 Set-Location -LiteralPath $PSScriptRoot
 
 try {
-    $nodeMajor = [int](node -p "process.versions.node.split('.')[0]")
+    $nodeVersion = [version](node -p "process.versions.node")
 } catch {
-    Write-Host "Node.js is not installed or is not available in PATH. Install Node.js 22 or newer, then open this launcher again." -ForegroundColor Red
+    Write-Host "Node.js is not installed or is not available in PATH. Install Node.js 22.5 or newer, then open this launcher again." -ForegroundColor Red
     return
 }
 
-if ($nodeMajor -lt 22) {
-    Write-Host "This project needs Node.js 22 or newer. Current version: $(node --version)" -ForegroundColor Red
+if ($nodeVersion -lt [version]"22.5.0") {
+    Write-Host "This project needs Node.js 22.5 or newer. Current version: $(node --version)" -ForegroundColor Red
     return
 }
 
 if (-not (Test-Path -LiteralPath (Join-Path $PSScriptRoot "node_modules"))) {
     Write-Host "Installing the project dependencies..." -ForegroundColor Cyan
-    npm ci
+    npm ci --ignore-scripts
     if ($LASTEXITCODE -ne 0) {
         Write-Host "Dependency installation failed. Check the message above and try again." -ForegroundColor Red
         return
