@@ -44,3 +44,8 @@
 .ad-close-button:hover{background:#154b31}
 .ad-close-button:focus-visible{outline:3px solid #c5ed75;outline-offset:3px}
 .ad-close-button[hidden]{display:none}
+.auth-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:20px 0 8px}
+.auth-actions .btn{width:100%}
+.auth-forgot{margin:12px 0 0;text-align:center;font-size:14px}
+.auth-forgot a{color:var(--green);text-decoration:underline;text-underline-offset:3px}
+@media(max-width:420px){.auth-actions{grid-template-columns:1fr}}

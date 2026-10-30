@@ -102,7 +102,7 @@ async function home() {
       <h1>Spend time on<br>what matters.</h1>
       <p>Explore advertiser-funded campaigns, complete the stated requirements and earn Reward Coins. Rewards are reviewed before they become available to withdraw.</p>
       <div class="actions">
-        <button class="btn" style="background:var(--lime);color:var(--green-dark)" onclick="go('/register')">Explore Reward Hub →</button>
+        <button class="btn" style="background:var(--lime);color:var(--green-dark)" onclick="go('/register')">Create account</button>
         <button class="btn secondary" onclick="go('/login')">Sign in</button>
       </div>
     </section>
@@ -137,8 +137,11 @@ function authPage(type) {
         ${register ? `<label>Account type</label><select name="accountType" id="accountType"><option value="user">I want to earn rewards</option><option value="advertiser">I represent a business</option></select><div id="businessField" hidden><label>Business name</label><input name="businessName" id="businessName" maxlength="150"></div>` : ""}
         <label>Email</label><input name="email" type="email" required>
         <label>Password</label><input name="password" type="password" minlength="${register ? 12 : 1}" required autocomplete="${register ? "new-password" : "current-password"}">
-        <br><br><button class="btn">${register ? "Create account" : "Sign in"}</button>
-        ${!register ? `<button type="button" class="btn secondary" style="margin-left:8px" onclick="go('/forgot-password')">Forgot password?</button>` : ""}
+        <div class="auth-actions">
+          <button type="submit" class="btn">${register ? "Create account" : "Sign in"}</button>
+          <button type="button" class="btn secondary" onclick="go('${register ? "/login" : "/register"}')">${register ? "Sign in" : "Create account"}</button>
+        </div>
+        ${register ? `<p class="metric-caption">Use a password with at least 12 characters.</p>` : `<p class="auth-forgot"><a href="/forgot-password" onclick="event.preventDefault();go('/forgot-password')">Forgot password?</a></p>`}
         <p id="msg"></p>
       </form>
     </div>
