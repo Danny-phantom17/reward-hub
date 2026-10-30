@@ -64,7 +64,7 @@ async function refreshNav() {
   const publicLinks = `${link("/", "Home")}${link("/faq", "FAQs")}${link("/policies", "Facts")}`;
   if (!me) {
     navActions.innerHTML = `<div class="nav-links">${publicLinks}${link("/login", "Recent")}${link("/login", "Dashboard")}</div><div class="nav-cta">${link("/login", "Earn", "nav-link-button nav-link-primary")}${link("/login", "Withdraw", "nav-link-button")}${link("/login", "Login", "nav-link-button")}${link("/register", "Create account", "nav-link-button nav-link-primary")}</div>`;
-    bottomNav.innerHTML = `${tab("/", "Home", "home")}${tab("/faq", "FAQs", "faq")}${tab("/policies", "Facts", "facts")}${tab("/login", "Dashboard", "dashboard")}${tab("/register", "Join", "earn")}`;
+    bottomNav.innerHTML = `${tab("/", "Home", "home")}${tab("/faq", "FAQs", "faq")}${tab("/policies", "Facts", "facts")}${tab("/login", "Dashboard", "dashboard")}${tab("/login", "Tasks", "earn")}`;
     return;
   }
   const userLinks = me.role === "user"
@@ -73,7 +73,7 @@ async function refreshNav() {
   const userActions = `<div class="nav-cta">${me.role === "user" ? `${link("/dashboard#campaignsSection", "Earn", "nav-link-button nav-link-primary")}${link("/withdraw", "Withdraw", "nav-link-button")}` : link(dashboardPath, me.role === "admin" ? "Operations" : "Campaigns", "nav-link-button nav-link-primary")}</div>`;
   navActions.innerHTML = `<div class="nav-links">${publicLinks}${userLinks}</div>${userActions}<button class="btn secondary nav-logout" onclick="logout()">Logout</button>`;
   bottomNav.innerHTML = me.role === "user"
-    ? `${tab("/", "Home", "home")}${tab("/dashboard#campaignsSection", "Earn", "earn", "/dashboard")}${tab("/transactions", "Recent", "recent")}${tab("/dashboard", "Dashboard", "dashboard")}${tab("/withdraw", "Withdraw", "wallet")}`
+    ? `${tab("/", "Home", "home")}${tab("/dashboard#campaignsSection", "Tasks", "earn", "/dashboard")}${tab("/transactions", "Recent", "recent")}${tab("/dashboard", "Dashboard", "dashboard")}${tab("/withdraw", "Withdraw", "wallet")}`
     : `${tab("/", "Home", "home")}${tab("/faq", "FAQs", "faq")}${tab("/policies", "Facts", "facts")}${tab(dashboardPath, me.role === "admin" ? "Admin" : "Workspace", "dashboard", dashboardPath)}${tab("/support", "Support", "recent")}`;
 }
 
