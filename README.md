@@ -1,70 +1,64 @@
 # RewardHub MVP
 
-A local MVP for sponsored video campaigns, Reward Coin rewards, advertiser funding review, support tickets, and manually reconciled withdrawals.
+> The Express server uses PostgreSQL with persistent PostgreSQL sessions. The installed local PostgreSQL server is running, but no test database URL is configured yet. Do not deploy until `npm run test:postgres:runtime` passes. See [POSTGRES_MIGRATION.md](POSTGRES_MIGRATION.md) for setup and verification status.
+
+A local MVP for sponsored video and 15-second advertiser-link visit reward campaigns, Reward Coin rewards, advertiser funding review, support tickets, and manually reconciled withdrawals.
 
 ## Stack and setup
 
-- Node.js 20 or newer
-- Express, bcryptjs, express-session
-- SQLite (`better-sqlite3` when its native binding is available; Node's built-in `node:sqlite` fallback on Node 22.5+)
+- Node.js 20.12 or newer
+- Express 5, PostgreSQL through `pg`, and PostgreSQL-backed express sessions
+- PostgreSQL is the application's runtime database; startup fails clearly when `DATABASE_URL` is missing.
 - Vanilla HTML, CSS, and JavaScript
 
-From this directory, run:
+### Local PostgreSQL on Windows
+
+Install PostgreSQL Server, Command Line Tools, and optionally pgAdmin using the [official PostgreSQL Windows installer page](https://www.postgresql.org/download/windows/). The official Windows installer is provided by EDB and includes the PostgreSQL server, pgAdmin, and tools such as `psql`.
+
+In pgAdmin, connect to the local server and create a dedicated login role `rewardhub_test_user` and empty database `rewardhub_test`, owned by that role. Choose and enter the test-only password directly in pgAdmin.
+
+Copy `.env.example` to `.env.local`, replace the placeholders with local values, and keep `.env.local` uncommitted. The start command loads this file if present:
 
 ```powershell
+Copy-Item .env.example .env.local
 npm install
 npm start
 ```
 
-Open `http://localhost:3000` (or the port configured with `PORT`). Run the integration suite with `npm test`.
+Open `http://localhost:3000`. Set `DATABASE_URL=postgres://rewardhub_test_user:YOUR_LOCAL_TEST_PASSWORD@127.0.0.1:5432/rewardhub_test`, a random `SESSION_SECRET` of at least 32 characters, and the existing product secrets in `.env.local`. Use a separate Render-managed database and secret values in production.
 
-On Windows, double-click `Start RewardHub Locally.bat` to start the app without changing directories in a terminal. It requires Node.js 22.5 or newer, prompts for a local administrator email and password, and does not save the password. Keep using the same login to sign in on later runs. The launcher installs dependencies without running native build scripts; the app uses Node's built-in SQLite fallback if the native SQLite add-on is unavailable. Open `http://localhost:3000` and press Ctrl+C in the launcher window to stop the server.
+`npm test` runs the behavior regression suite against a temporary SQLite fixture. `npm run test:postgres` runs schema/import tests against embedded PGlite fixtures. To run the same route workflows against the real local PostgreSQL server, set `TEST_DATABASE_URL` in an ignored `.env.test.local` file and run `npm run test:postgres:runtime`. That suite uses a unique schema in a loopback database whose name includes `test`.
+
+Create the ignored runtime-test settings file with `Copy-Item .env.example .env.test.local`, then set both `DATABASE_URL` and `TEST_DATABASE_URL` to the local `rewardhub_test` connection string. The runtime suite prints its unique schema name and leaves that test schema in place for review.
 
 ## Admin account and secrets
 
-An administrator is provisioned only when both credentials are configured. Set them before the first run:
+An administrator is provisioned only if both `ADMIN_EMAIL` and `ADMIN_PASSWORD` are configured. The initial password is hashed with bcrypt; an existing admin account is left unchanged. Production startup stops if the configured admin email already belongs to a non-admin account, rather than changing that account's role. For production, use HTTPS, `NODE_ENV=production`, a unique session secret of at least 32 characters, and an admin password of at least 12 characters. Keep secrets in `.env.local` only for local development and in the hosting provider's secret manager in production.
 
-```powershell
-$env:ADMIN_EMAIL="your@email.com"
-$env:ADMIN_PASSWORD="a-long-unique-password"
-$env:SESSION_SECRET="generate-a-random-secret-at-least-32-characters"
-$env:NODE_ENV="development"
-npm start
-```
+Password recovery uses Resend. Configure `RESEND_API_KEY`, a verified `EMAIL_FROM` sender, and `APP_BASE_URL` (the public HTTPS origin without a trailing slash). Recovery links are single-use, expire after 30 minutes, and invalidate existing sessions for that account.
 
-For production, use HTTPS, `NODE_ENV=production`, a unique session secret of at least 32 characters, and an admin password of at least 12 characters. Store secrets in the deployment secret manager, not in source control. Back up the SQLite database and secrets securely; rotate keys only with a planned data re-encryption procedure.
+## PostgreSQL migration and clean launch
 
-Password recovery now uses Resend. Configure `RESEND_API_KEY`, `EMAIL_FROM` (a sender verified with Resend), and `APP_BASE_URL` (the public HTTPS origin, without a trailing slash). Recovery links are single-use, expire after 30 minutes, and invalidate existing sessions for that account. Without these email settings, recovery endpoints remain unavailable.
+The PostgreSQL schema is versioned in `migrations/` and applied at app startup. The account-preserving importer keeps user IDs, emails, bcrypt hashes, roles, creation timestamps, advertiser profiles, and platform settings. It refuses to import when it finds a nonzero legacy/current balance, ledger, funding, view, withdrawal, pending/approved action claim, or unresolved support ticket. It leaves old campaigns and activity empty. It must only be run manually against a newly created, isolated database after financial records have been classified. Its account mapping was checked against both local SQLite files in disposable in-memory PostgreSQL tests; no persistent PostgreSQL or production database received an import.
 
-## Deploying on Railway
+Both local SQLite files are retained as read-only backups. Do not run the importer against production as part of application startup. See [POSTGRES_MIGRATION.md](POSTGRES_MIGRATION.md) for mapping, reset rules, and verification status.
 
-The `.railway/railway.ts` file defines a single-instance service in Railway's EU West region with a 500 MB persistent volume mounted at `/data`. The database path is set to `/data/rewardhub.db`, so the app's SQLite data survives deployments and restarts. Keep the service at one replica because SQLite and the attached volume are single-instance. Railway does not apply this project-level IaC file just because it is present in a GitHub repository. If you want to use it, install/authenticate Railway CLI 5.42.1 or newer, link the local repository to the intended Railway project and environment, then run `railway config plan` and review the proposed changes before `railway config apply`. A GitHub-dashboard-only deployment must instead have the same region, volume, mount path, single replica, healthcheck, and database variables configured in Railway's service settings.
+## Deployment status
 
-For real users and balances, use Railway Hobby or another paid plan so the service does not depend on the Free plan's small monthly usage credit. Railway Free and Trial volumes are limited to 0.5 GB. Increase the volume before it fills; Railway volumes cannot be downsized after creation.
-
-Set these values in Railway's service variables before the first production deployment:
-
-- `ADMIN_EMAIL`: email used for the initial administrator login.
-- `ADMIN_PASSWORD`: unique initial administrator password, at least 12 characters. It is only used to create the administrator if that email is not already in the database; changing this variable later does not reset an existing account password.
-- `SESSION_SECRET`: random secret of at least 32 characters.
-- `BANK_DETAILS_ENCRYPTION_KEY`: long, unique secret used to encrypt viewer bank details. Keep a secure backup; changing it makes previously stored account details unreadable.
-- `ADVERTISER_FUNDING_INSTRUCTIONS`: your verified bank account and transfer instructions for advertisers.
-- `RESEND_API_KEY`, `EMAIL_FROM`, and `APP_BASE_URL`: verified Resend sender details and the deployed HTTPS origin for password recovery.
-
-Use [`railway-variables.example`](railway-variables.example) as the copy-ready variable-name checklist; replace every placeholder with your own values and enter them in Railway's Variables screen. Generate unique random secrets for the admin password, session secret, and bank encryption key. Do not send or commit those values. Railway supplies the public domain after the service is created, so set `APP_BASE_URL` to that HTTPS domain before enabling password recovery. `NODE_ENV` and `DATABASE_PATH` are set by the Railway configuration. On a new Railway volume, the app starts with a new database; transfer existing database contents only if you explicitly need them.
+`render.yaml` provides a Blueprint for a Node web service and a separate managed PostgreSQL database. Set required secret values in the Render Dashboard and complete local PostgreSQL route/session/financial/concurrency tests before creating or deploying the Blueprint. No deployment is performed by this project setup.
 
 ## Current product behavior
 
 - User and advertiser accounts are separate. Advertiser profiles require administrator approval before campaign submission.
-- The MVP supports video visibility campaigns only. Other objectives are intentionally unavailable until reliable measurement is integrated.
+- Campaigns support qualifying video views and optional, capped advertiser-link visit rewards. For an action reward, the viewer opens the advertiser's existing website, WhatsApp, or social link from Reward Hub; the reward is credited after the opened tab remains available for 15 seconds. Advertisers do not install scripts, add an API, edit their project, or redeploy. This timer measures elapsed open-tab time only; it cannot confirm that someone read a page, registered, submitted a form, or sent a message.
 - Campaign ads play without native pause, seek, or replay controls and attempt to autoplay. If the browser blocks autoplay, the viewer gets a Start ad button. Tapping anywhere on the video surface opens the advertiser destination in a new tab. A close X appears during the final second and remains available at the end; tapping it submits the completion for the server's normal checks and returns to the dashboard without opening the advertiser.
 - A submitted completion is a single attempt and must pass a server elapsed-time check, then remains pending until manual review. Elapsed time does not prove genuine playback or attention.
 - Campaigns require administrator approval and full advertiser funding reconciliation before they appear to users. Advertiser transfer references are claims, not proof of payment.
-- Current defaults are 10,000 RC = ₦1,000, a 20,000 RC (₦2,000) minimum withdrawal, 0% withdrawal fee, 50% reward allocation, and 20% variable-cost estimate. Administrators can change settings for future requests. Existing installations on the prior default rate are migrated once; custom values are preserved.
+- Current defaults are 10,000 RC = ₦1,000, 25 RC (₦2.50) per qualifying view, a 40,000 RC (₦4,000) minimum withdrawal, and a 40% viewer reward pool / 50% platform allocation / 10% operating reserve split for new campaigns. Admins can configure the default view reward. The conversion is shown to users only while preparing a withdrawal. Each campaign stores its allocation snapshot. The operating reserve and platform allocation are reporting buckets, not automatic transfers. Both view and action rewards use the same capped viewer pool. Actual operating expenses are recorded in the ledger, separately from viewer balances and withdrawals. Reward Hub records link clicks and credits an action reward after the viewer keeps the opened tab available for 15 seconds. This does not verify activity inside the advertiser site.
 - Bank withdrawals are disabled until `BANK_DETAILS_ENCRYPTION_KEY` is configured as a strong secret. The initial manual payout flow reserves RC, records each review state, and requires payout reference and evidence before marking paid.
 - Withdrawals are manual: users submit bank details, RC is reserved, and an administrator reviews the request, pays it from the business bank account, then records payout reference and evidence. Requests are accepted only when bank-detail encryption is configured. The app does not require Paystack or an automated payout provider for this workflow.
 - Advertiser funding instructions are hidden until `ADVERTISER_FUNDING_INSTRUCTIONS` is configured with verified business payment details. The app does not connect to a payment provider or verify bank transfers automatically.
-- Existing balances and old completions are preserved in a restricted legacy reconciliation state. They are not converted into spendable RC automatically. Historical withdrawal destinations are not returned by the application APIs.
+- The app has restricted legacy reconciliation handling for historical financial rows, but clean-launch imports refuse any nonzero balance or financial activity and do not import those rows. Historical withdrawal destinations are not returned by the application APIs.
 - Support tickets and an audit trail are stored in the local database. Password reset is implemented but requires Resend configuration. Identity checks, bank ownership verification, automated funding, and automated payouts are not configured.
 
 ## Before a real-money launch

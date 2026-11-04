@@ -5,20 +5,29 @@
   "description": "Rewarded sponsored-campaign MVP",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js",
-    "test": "node test/rewardhub.integration.test.js"
+    "start": "node --env-file-if-exists=.env.local server.js",
+    "dev": "node --env-file-if-exists=.env.local --watch server.js",
+    "test": "node test/rewardhub.integration.test.js",
+    "test:postgres": "node test/postgres-migration.test.js",
+    "test:postgres:runtime": "node --env-file-if-exists=.env.test.local -e \"process.env.REWARDHUB_POSTGRES_TEST='1'; require('./test/rewardhub.integration.test.js')\""
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
     "better-sqlite3": "^11.10.0",
+    "connect-pg-simple": "^10.0.0",
     "express": "^5.1.0",
-    "express-session": "^1.18.2"
+    "express-session": "^1.18.2",
+    "pg": "^8.23.1"
   },
   "allowScripts": {
     "better-sqlite3@11.10.0": true
   },
   "devDependencies": {
+    "@babel/generator": "^8.1.0",
+    "@babel/parser": "^8.1.0",
+    "@babel/traverse": "^8.1.0",
+    "@babel/types": "^8.1.0",
+    "@electric-sql/pglite": "^0.5.14",
     "railway": "^3.16.0"
   }
 }
