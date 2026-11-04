@@ -1181,7 +1181,7 @@ app.get("/api/admin/fundings", requireAdmin, async (req, res) => {
   res.json(await db.prepare(`
     SELECT f.id, f.campaign_id, f.amount_kobo, f.status, f.provider, f.advertiser_reference,
       f.reconciliation_reference, f.verification_note, f.created_at, c.title AS campaign_title,
-      p.business_name AS advertiser, u.name AS submitted_by_name, u.email AS submitted_by_email
+      COALESCE(p.business_name, c.advertiser) AS advertiser, u.name AS submitted_by_name, u.email AS submitted_by_email
     FROM campaign_fundings f JOIN campaigns c ON c.id = f.campaign_id
     LEFT JOIN advertiser_profiles p ON p.user_id = c.advertiser_user_id
     JOIN users u ON u.id = f.submitted_by ORDER BY f.id DESC
@@ -1427,6 +1427,118 @@ app.post("/api/admin/campaigns", requireAdmin, async (req, res) => {
     { advertiserUserId: profile.user_id, rewardBudgetRc, viewerRewardAllocationKobo: viewerKobo, platformAllocationKobo: platformKobo, operatingReserveKobo: reserveKobo });
   await notify(profile.user_id, "campaign_pending_review", "Campaign submitted", `${title.trim()} is awaiting administrator review.`, "campaign", result.lastInsertRowid);
   res.status(201).json({ ok: true, id: result.lastInsertRowid, status });
+});
+
+// Admin-managed campaigns are for advertisers who provide their campaign details
+// directly and do not create Reward Hub accounts. They use the same review and
+// funding gates as registered advertiser campaigns.
+app.post("/api/admin/managed-campaigns", requireAdmin, async (req, res) => {
+  const { title, advertiser, description, videoUrl, destinationUrl } = req.body;
+  const supportedActionTypes = ["none", "website_engagement", "registration", "lead_submission", "whatsapp_enquiry"];
+  const actionType = req.body.actionType || "none";
+  const reward = Number(req.body.rewardRc === undefined || req.body.rewardRc === "" ? await getSetting("default_view_reward_rc") : req.body.rewardRc);
+  const budgetNgn = Number(req.body.budgetNgn);
+  const budgetKobo = budgetNgn * 100;
+  const duration = Number(req.body.durationSeconds);
+  const target = Number(req.body.targetCompletions || 0);
+  const actionReward = Number(req.body.actionRewardRc || 0);
+  const maxActionRewards = Number(req.body.maxActionRewards || 0);
+  const isHttpUrl = value => { try { return ["http:", "https:"].includes(new URL(value).protocol); } catch { return false; } };
+  if (typeof advertiser !== "string" || !advertiser.trim() || advertiser.trim().length > 150 ||
+      typeof title !== "string" || !title.trim() || title.trim().length > 150 ||
+      typeof videoUrl !== "string" || !isHttpUrl(videoUrl) ||
+      (destinationUrl && (typeof destinationUrl !== "string" || !isHttpUrl(destinationUrl))) ||
+      !supportedActionTypes.includes(actionType) ||
+      !Number.isSafeInteger(reward) || reward < 1 || !Number.isSafeInteger(budgetNgn) || budgetNgn < 1 || !Number.isSafeInteger(budgetKobo) ||
+      !Number.isSafeInteger(duration) || duration < 1 || duration > 86400 ||
+      !Number.isSafeInteger(actionReward) || actionReward < 0 || !Number.isSafeInteger(maxActionRewards) || maxActionRewards < 0 ||
+      (actionType !== "none" && (!destinationUrl || actionReward < 1 || maxActionRewards < 1)) ||
+      (actionType === "none" && (actionReward !== 0 || maxActionRewards !== 0)) ||
+      !Number.isSafeInteger(target) || target < 0 || target > 100000000 ||
+      (description !== undefined && (typeof description !== "string" || description.length > 2000))) {
+    return res.status(400).json({ error: "Enter the advertiser and campaign name, valid HTTP(S) video/link, positive budget and view reward, duration, and valid optional action reward details." });
+  }
+  const allocation = await campaignBudgetAllocation(budgetKobo);
+  if (!allocation) return res.status(503).json({ error: "Campaign allocation settings must total exactly 100%. Contact platform support." });
+  const { rewardBudgetRc, viewerBps, platformBps, reserveBps, viewerKobo, platformKobo, reserveKobo, rateRc, rateKobo } = allocation;
+  if (rewardBudgetRc < reward) return res.status(400).json({ error: "This budget does not cover one completion at the selected reward using the current allocation." });
+  if (!Number.isSafeInteger(actionReward * maxActionRewards) || actionReward * maxActionRewards > rewardBudgetRc) {
+    return res.status(400).json({ error: "The maximum action rewards must fit inside the campaign viewer reward pool." });
+  }
+  try {
+    let campaignId;
+    await db.transaction(async () => {
+      const result = await db.prepare(`
+        INSERT INTO campaigns
+          (title, advertiser, description, video_url, destination_url, reward, duration_seconds, budget, active, status,
+           advertiser_user_id, objective, qualifying_rules, approval_status, funding_status, advertiser_budget_kobo,
+           funded_kobo, reward_budget_rc, reward_allocation_bps, platform_allocation_bps, operating_reserve_bps,
+           website_engagement_seconds, action_type, action_reward_rc, max_action_rewards, viewer_reward_allocation_kobo,
+           platform_allocation_kobo, operating_reserve_kobo, reward_rate_rc, reward_rate_kobo, target_completions)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending_review', NULL, ?, ?, 'pending_review', 'unfunded', ?, 0,
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(title.trim(), advertiser.trim(), (description || "").trim(), videoUrl, destinationUrl || "", reward, duration,
+        rewardBudgetRc, actionType !== "none" ? "action_campaign" : "video_visibility",
+        `Watch at least 90% of the advertised video. View rewards are reviewed by an administrator. ${actionType !== "none" ? `Optional ${actionType} reward: ${actionReward} RC after the viewer keeps the advertiser link open for ${ACTION_DWELL_SECONDS} seconds. Website actions are not independently verified.` : "Website clicks alone do not earn action rewards."}`,
+        budgetKobo, rewardBudgetRc, viewerBps, platformBps, reserveBps, ACTION_DWELL_SECONDS, actionType, actionReward,
+        maxActionRewards, viewerKobo, platformKobo, reserveKobo, rateRc, rateKobo, target);
+      campaignId = result.lastInsertRowid;
+      await writeAudit(req.session.user.id, "campaign.created_by_admin_for_guest_advertiser", "campaign", campaignId,
+        { advertiser: advertiser.trim(), advertiserBudgetKobo: budgetKobo, rewardBudgetRc, actionType });
+    }).immediate();
+    res.status(201).json({ ok: true, id: campaignId, status: "pending_review", fundingStatus: "unfunded", rewardBudgetRc });
+  } catch (error) { throw error; }
+});
+
+// Record money the administrator has already verified in the business bank
+// account. This endpoint never initiates a payment or treats a claim as proof.
+app.post("/api/admin/campaigns/:id/direct-funding", requireAdmin, async (req, res) => {
+  const amountNgn = Number(req.body.amountNgn);
+  const amountKobo = amountNgn * 100;
+  const reconciliationReference = typeof req.body.reconciliationReference === "string" ? req.body.reconciliationReference.trim() : "";
+  const advertiserReference = typeof req.body.advertiserReference === "string" ? req.body.advertiserReference.trim() : "";
+  const verificationNote = typeof req.body.verificationNote === "string" ? req.body.verificationNote.trim() : "";
+  if (!Number.isSafeInteger(amountNgn) || amountNgn < 1 || !Number.isSafeInteger(amountKobo) ||
+      !reconciliationReference || reconciliationReference.length > 100 || advertiserReference.length > 100 ||
+      !verificationNote || verificationNote.length > 1000) {
+    return res.status(400).json({ error: "Enter a positive whole-naira amount, unique bank statement reference, and verification note." });
+  }
+  try {
+    let fundingId;
+    await db.transaction(async () => {
+      const campaign = await db.prepare("SELECT * FROM campaigns WHERE id = ? FOR UPDATE").get(req.params.id);
+      if (!campaign || campaign.advertiser_user_id !== null) throw new Error("GUEST_CAMPAIGN_NOT_FOUND");
+      if (["rejected", "terminated"].includes(campaign.status) || campaign.approval_status === "rejected") throw new Error("CAMPAIGN_CLOSED");
+      if (campaign.advertiser_budget_kobo < 1 || campaign.funded_kobo + amountKobo > campaign.advertiser_budget_kobo) throw new Error("FUNDING_EXCEEDS_CAMPAIGN_BUDGET");
+      const funding = await db.prepare(`
+        INSERT INTO campaign_fundings
+          (campaign_id, amount_kobo, status, provider, advertiser_reference, reconciliation_reference,
+           submitted_by, confirmed_by, verification_note, confirmed_at)
+        VALUES (?, ?, 'confirmed', 'manual_direct', ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `).run(campaign.id, amountKobo, advertiserReference, reconciliationReference, req.session.user.id,
+        req.session.user.id, verificationNote);
+      fundingId = funding.lastInsertRowid;
+      const fundedTotal = campaign.funded_kobo + amountKobo;
+      const fullyFunded = fundedTotal >= campaign.advertiser_budget_kobo;
+      await db.prepare("UPDATE campaigns SET funded_kobo = ?, funding_status = ?, active = ?, status = ? WHERE id = ?")
+        .run(fundedTotal, fullyFunded ? "confirmed" : "pending_review",
+          fullyFunded && campaign.approval_status === "approved" ? 1 : 0,
+          fullyFunded && campaign.approval_status === "approved" ? "active" : campaign.approval_status === "approved" ? "approved" : "pending_review",
+          campaign.id);
+      await writeLedger({ type: "advertiser_funding", amountKobo, entityType: "campaign", entityId: campaign.id,
+        idempotencyKey: `campaign-funding:${fundingId}:confirmed`, description: `Manually verified advertiser funding for ${campaign.title}.`,
+        actorUserId: req.session.user.id, metadata: { fundingId, reconciliationReference, source: "manual_direct" } });
+      await writeAudit(req.session.user.id, "campaign_funding.direct_deposit_verified", "campaign_funding", fundingId,
+        { campaignId: campaign.id, amountKobo, reconciliationReference, advertiserReference, verificationNote });
+    }).immediate();
+    res.status(201).json({ ok: true, fundingId, status: "confirmed" });
+  } catch (error) {
+    if (error.message === "GUEST_CAMPAIGN_NOT_FOUND") return res.status(404).json({ error: "Managed campaign not found." });
+    if (error.message === "CAMPAIGN_CLOSED") return res.status(409).json({ error: "Funding cannot be recorded for a rejected or closed campaign." });
+    if (error.message === "FUNDING_EXCEEDS_CAMPAIGN_BUDGET") return res.status(409).json({ error: "This amount exceeds the campaign's remaining budget." });
+    if (error.code === "23505") return res.status(409).json({ error: "That bank statement reference has already been recorded." });
+    throw error;
+  }
 });
 
 app.patch("/api/admin/campaigns/:id", requireAdmin, async (req, res) => {

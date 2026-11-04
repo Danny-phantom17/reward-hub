@@ -497,4 +497,49 @@ test("legacy migration and funded rewards, ledger, advertiser review, and withdr
     assertStatus(await rateLimitClient.post("/api/login", { email: "missing-rate-limit-user@example.test", password: "invalid-test-password" }), 401);
   }
   assertStatus(await rateLimitClient.post("/api/login", { email: "missing-rate-limit-user@example.test", password: "invalid-test-password" }), 429);
+
+  const guestCampaign = await admin.post("/api/admin/managed-campaigns", {
+    advertiser: "Guest Advertiser Test", title: "Admin-managed campaign", description: "Test guest advertiser campaign.",
+    videoUrl: "https://example.test/guest-campaign.mp4", destinationUrl: "https://example.test/guest-offer",
+    budgetNgn: 10000, rewardRc: 25, durationSeconds: 30, targetCompletions: 0,
+    actionType: "whatsapp_enquiry", actionRewardRc: 50, maxActionRewards: 20
+  });
+  assertStatus(guestCampaign, 201);
+  const managedRow = (await admin.get("/api/admin/campaigns")).data.find(item => item.id === guestCampaign.data.id);
+  assert.equal(managedRow.advertiser_user_id, null);
+  assert.equal(managedRow.active, 0);
+  assert.equal(managedRow.approval_status, "pending_review");
+  assert.equal(managedRow.funding_status, "unfunded");
+  assert.equal(managedRow.action_type, "whatsapp_enquiry");
+  assertStatus(await user.post(`/api/admin/campaigns/${guestCampaign.data.id}/direct-funding`, {
+    amountNgn: 10000, reconciliationReference: "GUEST-UNAUTH-BANK-REF", verificationNote: "Not permitted."
+  }), 403);
+  assertStatus(await admin.post(`/api/admin/campaigns/${guestCampaign.data.id}/direct-funding`, {
+    amountNgn: 4000, reconciliationReference: "GUEST-TEST-BANK-REF-1", verificationNote: "Isolated fixture: statement checked."
+  }), 201);
+  // A bank reference cannot be recorded twice, and deposits cannot exceed the
+  // budget agreed for the campaign.
+  assertStatus(await admin.post(`/api/admin/campaigns/${guestCampaign.data.id}/direct-funding`, {
+    amountNgn: 4000, reconciliationReference: "GUEST-TEST-BANK-REF-1", verificationNote: "Duplicate fixture."
+  }), 409);
+  assertStatus(await admin.post(`/api/admin/campaigns/${guestCampaign.data.id}/direct-funding`, {
+    amountNgn: 6000, reconciliationReference: "GUEST-TEST-BANK-REF-2", verificationNote: "Isolated fixture: statement checked."
+  }), 201);
+  assertStatus(await admin.post(`/api/admin/campaigns/${guestCampaign.data.id}/direct-funding`, {
+    amountNgn: 1, reconciliationReference: "GUEST-TEST-BANK-REF-3", verificationNote: "Isolated fixture."
+  }), 409);
+  const fundedButUnapproved = (await admin.get("/api/admin/campaigns")).data.find(item => item.id === guestCampaign.data.id);
+  assert.equal(fundedButUnapproved.funded_kobo, 1000000);
+  assert.equal(fundedButUnapproved.active, 0);
+  assertStatus(await admin.patch(`/api/admin/campaigns/${guestCampaign.data.id}`, { approvalStatus: "approved" }), 200);
+  const guestFundingLedger = await db.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(amount_kobo),0) AS total FROM ledger_entries WHERE entity_type = 'campaign' AND entity_id = ? AND entry_type = 'advertiser_funding'").get(guestCampaign.data.id);
+  assert.equal(Number(guestFundingLedger.count), 2);
+  assert.equal(Number(guestFundingLedger.total), 1000000);
+  const guestFundings = await db.prepare("SELECT COUNT(*) AS count, COALESCE(SUM(amount_kobo),0) AS total FROM campaign_fundings WHERE campaign_id = ? AND status = 'confirmed'").get(guestCampaign.data.id);
+  assert.equal(Number(guestFundings.count), 2);
+  assert.equal(Number(guestFundings.total), 1000000);
+  const fullyFundedGuest = (await admin.get("/api/admin/campaigns")).data.find(item => item.id === guestCampaign.data.id);
+  assert.equal(fullyFundedGuest.funded_kobo, 1000000);
+  assert.equal(fullyFundedGuest.funding_status, "confirmed");
+  assert.equal(fullyFundedGuest.active, 1);
 });
