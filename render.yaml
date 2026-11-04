@@ -2,9 +2,8 @@ services:
   - type: web
     name: rewardhub
     runtime: node
-    plan: 0.5c-512mb
+    plan: free
     buildCommand: npm ci
-    preDeployCommand: node scripts/migrate.js
     startCommand: npm start
     autoDeployTrigger: off
     healthCheckPath: /health
@@ -42,5 +41,5 @@ databases:
     databaseName: rewardhub
     user: rewardhub_user
     postgresMajorVersion: "18"
-    plan: 0.1c-256mb
+    plan: free
     diskSizeGB: 1
