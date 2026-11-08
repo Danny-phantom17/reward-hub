@@ -1500,6 +1500,33 @@ app.get("/api/free-videos", requireUser, async (_req, res) => {
   res.json(videos);
 });
 
+app.get("/api/free-videos/media/:id", requireUser, async (req, res) => {
+  const media = await db.prepare(`
+    SELECT m.content_type, m.media_data, m.file_size
+    FROM free_video_media m JOIN free_videos v ON v.media_id = m.id
+    WHERE m.id = ? AND v.status = 'published'
+  `).get(req.params.id);
+  if (!media) return res.status(404).json({ error: "Free video not found." });
+  const data = Buffer.from(media.media_data);
+  const range = req.get("range");
+  res.setHeader("Content-Type", media.content_type);
+  res.setHeader("Accept-Ranges", "bytes");
+  res.setHeader("Cache-Control", "private, max-age=3600");
+  if (range) {
+    const match = /^bytes=(\d*)-(\d*)$/.exec(range);
+    if (!match) return res.status(416).setHeader("Content-Range", `bytes */${data.length}`).end();
+    let start = match[1] ? Number(match[1]) : Math.max(0, data.length - Number(match[2] || 0));
+    let end = match[2] && match[1] ? Math.min(Number(match[2]), data.length - 1) : data.length - 1;
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || start >= data.length || end < start) {
+      return res.status(416).setHeader("Content-Range", `bytes */${data.length}`).end();
+    }
+    const chunk = data.subarray(start, end + 1);
+    return res.status(206).set({ "Content-Range": `bytes ${start}-${end}/${data.length}`, "Content-Length": chunk.length }).end(chunk);
+  }
+  res.setHeader("Content-Length", data.length);
+  res.end(data);
+});
+
 app.get("/api/admin/free-videos", requireAdmin, async (_req, res) => {
   const videos = await db.prepare(`
     SELECT id, title, advertiser, description, video_url, destination_url, duration_seconds,
@@ -1508,6 +1535,63 @@ app.get("/api/admin/free-videos", requireAdmin, async (_req, res) => {
   `).all();
   res.json(videos);
 });
+
+app.post("/api/admin/free-videos/upload", requireAdmin,
+  express.raw({ type: "video/mp4", limit: "25mb" }), async (req, res) => {
+    const videoData = req.body;
+    if (!Buffer.isBuffer(videoData) || videoData.length < 12 || videoData.length > 25 * 1024 * 1024 ||
+        videoData.toString("ascii", 4, 8) !== "ftyp") {
+      return res.status(400).json({ error: "Choose a valid MP4 video no larger than 25 MB." });
+    }
+    let metadata;
+    try {
+      const encoded = req.get("x-free-video-metadata") || "";
+      metadata = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
+    } catch {
+      return res.status(400).json({ error: "Enter valid free video details." });
+    }
+    if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+      return res.status(400).json({ error: "Enter valid free video details." });
+    }
+    const title = typeof metadata.title === "string" ? metadata.title.trim() : "";
+    const advertiser = typeof metadata.advertiser === "string" ? metadata.advertiser.trim() : "";
+    const description = typeof metadata.description === "string" ? metadata.description.trim() : "";
+    const destinationUrl = typeof metadata.destinationUrl === "string" ? metadata.destinationUrl.trim() : "";
+    const duration = Number(metadata.durationSeconds);
+    const isHttpUrl = value => { try { return ["http:", "https:"].includes(new URL(value).protocol); } catch { return false; } };
+    let fileName = "video.mp4";
+    try { fileName = decodeURIComponent(req.get("x-upload-file-name") || fileName); } catch {}
+    fileName = fileName.split(/[\\/]/).pop().replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 120);
+    if (!title || title.length > 150 || advertiser.length > 150 || description.length > 2000 ||
+        !fileName.toLowerCase().endsWith(".mp4") || (destinationUrl && !isHttpUrl(destinationUrl)) ||
+        !Number.isSafeInteger(duration) || duration < 1 || duration > 86400) {
+      return res.status(400).json({ error: "Enter a title, MP4 file, optional HTTP(S) destination, and duration between 1 and 86400 seconds." });
+    }
+    const mediaId = crypto.randomUUID();
+    const fileHash = crypto.createHash("sha256").update(videoData).digest("hex");
+    try {
+      let videoId;
+      await db.transaction(async () => {
+        await db.prepare(`
+          INSERT INTO free_video_media (id, file_name, file_size, sha256, media_data, created_by)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `).run(mediaId, fileName, videoData.length, fileHash, videoData, req.session.user.id);
+        const result = await db.prepare(`
+          INSERT INTO free_videos
+            (title, advertiser, description, video_url, destination_url, duration_seconds, created_by, media_id)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(title, advertiser, description, `/api/free-videos/media/${mediaId}`, destinationUrl, duration,
+          req.session.user.id, mediaId);
+        videoId = result.lastInsertRowid;
+        await writeAudit(req.session.user.id, "free_video.uploaded", "free_video", videoId,
+          { title, fileName, fileSize: videoData.length, sha256: fileHash, destinationUrl, durationSeconds: duration, status: "draft", viewerRewardRc: 0, budgetKobo: 0 });
+      }).immediate();
+      res.status(201).json({ ok: true, id: videoId, status: "draft", fileSize: videoData.length, budgetKobo: 0, viewerRewardRc: 0 });
+    } catch (error) {
+      if (error.code === "23505") return res.status(409).json({ error: "A free video with that file already exists." });
+      throw error;
+    }
+  });
 
 app.post("/api/admin/free-videos", requireAdmin, async (req, res) => {
   const title = typeof req.body.title === "string" ? req.body.title.trim() : "";

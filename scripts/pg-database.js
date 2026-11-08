@@ -1,6 +1,6 @@
 const { AsyncLocalStorage } = require("node:async_hooks");
 
-const identityTables = new Set(["users", "advertiser_profiles", "ledger_entries", "audit_logs", "notifications", "campaigns", "views", "withdrawals", "campaign_fundings", "support_tickets", "action_reward_claims", "password_reset_tokens"]);
+const identityTables = new Set(["users", "advertiser_profiles", "ledger_entries", "audit_logs", "notifications", "campaigns", "free_videos", "views", "withdrawals", "campaign_fundings", "support_tickets", "action_reward_claims", "password_reset_tokens"]);
 
 function postgresSql(source) {
   let sql = source;
