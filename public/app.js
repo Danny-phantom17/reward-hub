@@ -145,7 +145,10 @@ function go(path) {
 window.addEventListener("popstate", render);
 
 async function home() {
-  const settings = await api("/api/public/settings").catch(() => ({ minimumWithdrawalRc: 40000, fundingConfigured: false }));
+  const [settings, freeVideos] = await Promise.all([
+    api("/api/public/settings").catch(() => ({ minimumWithdrawalRc: 40000, fundingConfigured: false })),
+    api("/api/free-videos").catch(() => [])
+  ]);
   layout(`
     <section class="hero">
       <span class="eyebrow">Reward Hub · Sponsored activities</span>
@@ -160,6 +163,7 @@ async function home() {
       <div class="stat"><span class="muted">Minimum withdrawal</span><strong>₦4,000</strong><small>After reward approval</small></div>
       <div class="stat"><span class="muted">Campaign funding</span><strong>${settings.fundingConfigured ? "Manual reconciliation" : "Not configured"}</strong><small>Unfunded campaigns do not earn rewards</small></div>
     </div>
+    ${freeVideos.length ? `<section class="panel" style="margin-top:26px"><div class="section-head"><div><span class="eyebrow">Open to everyone</span><h2>Free to watch</h2><p class="muted">These videos are available without an account. They have no campaign budget and do not pay Reward Coins.</p></div></div><div class="grid">${freeVideos.map(video => `<article class="card campaign-card"><span class="badge">${escapeHtml(video.advertiser || "Free video")}</span><h3>${escapeHtml(video.title)}</h3><p class="muted">${escapeHtml(video.description || "")}</p><p class="metric-caption">Free to watch · No viewer reward</p><video controls playsinline preload="metadata" aria-label="${escapeHtml(video.title)}" src="${escapeHtml(video.video_url)}" style="width:100%;max-height:520px;border-radius:14px;background:#080c1d"></video>${video.destination_url ? `<a class="btn secondary" href="${escapeHtml(video.destination_url)}" target="_blank" rel="noopener noreferrer">Visit ${escapeHtml(video.advertiser || "website")}</a>` : ""}</article>`).join("")}</div></section>` : ""}
     <div class="section-head"><div><span class="eyebrow">For participants</span><h2>Clear steps. Clear rewards.</h2></div></div>
     <section class="grid">
       <div class="card"><span class="badge">01 · Browse</span><h3>Choose a sponsored task</h3><p class="muted">Review the sponsor, requirements, estimated time, and RC reward before starting.</p></div>

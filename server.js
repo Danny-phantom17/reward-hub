@@ -1492,7 +1492,7 @@ app.post("/api/admin/managed-campaigns", requireAdmin, async (req, res) => {
 
 // Free videos are platform-owned content. They have no campaign budget,
 // completion tracking, or viewer reward and stay separate from paid campaigns.
-app.get("/api/free-videos", requireUser, async (_req, res) => {
+app.get("/api/free-videos", async (_req, res) => {
   const videos = await db.prepare(`
     SELECT id, title, advertiser, description, video_url, destination_url, duration_seconds, published_at
     FROM free_videos WHERE status = 'published' ORDER BY id DESC
@@ -1500,7 +1500,7 @@ app.get("/api/free-videos", requireUser, async (_req, res) => {
   res.json(videos);
 });
 
-app.get("/api/free-videos/media/:id", requireUser, async (req, res) => {
+app.get("/api/free-videos/media/:id", async (req, res) => {
   const media = await db.prepare(`
     SELECT m.content_type, m.media_data, m.file_size
     FROM free_video_media m JOIN free_videos v ON v.media_id = m.id
