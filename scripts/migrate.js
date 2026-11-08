@@ -15,22 +15,27 @@ function createPool(connectionString = process.env.DATABASE_URL) {
 
 async function migrate(pool) {
   await pool.query(`CREATE TABLE IF NOT EXISTS schema_migrations (name TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`);
-  const file = "001_initial_postgres.sql";
-  const found = await pool.query("SELECT 1 FROM schema_migrations WHERE name = $1", [file]);
-  if (found.rowCount) return;
-  const sql = await fs.readFile(path.join(__dirname, "..", "migrations", file), "utf8");
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const alreadyInitialized = await client.query("SELECT to_regclass('users') AS users");
-    if (alreadyInitialized.rows[0].users) throw new Error("PostgreSQL already has RewardHub tables but no migration record. Refusing to modify it.");
-    await client.query(sql);
-    await client.query("INSERT INTO schema_migrations(name) VALUES ($1)", [file]);
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally { client.release(); }
+  const migrationDir = path.join(__dirname, "..", "migrations");
+  const files = (await fs.readdir(migrationDir)).filter(file => /^\d+_[a-z0-9_-]+\.sql$/i.test(file)).sort();
+  for (const file of files) {
+    const found = await pool.query("SELECT 1 FROM schema_migrations WHERE name = $1", [file]);
+    if (found.rowCount) continue;
+    const sql = await fs.readFile(path.join(migrationDir, file), "utf8");
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      if (file === "001_initial_postgres.sql") {
+        const alreadyInitialized = await client.query("SELECT to_regclass('users') AS users");
+        if (alreadyInitialized.rows[0].users) throw new Error("PostgreSQL already has RewardHub tables but no migration record. Refusing to modify it.");
+      }
+      await client.query(sql);
+      await client.query("INSERT INTO schema_migrations(name) VALUES ($1)", [file]);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally { client.release(); }
+  }
 }
 
 if (require.main === module) {

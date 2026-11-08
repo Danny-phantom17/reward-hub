@@ -1490,6 +1490,70 @@ app.post("/api/admin/managed-campaigns", requireAdmin, async (req, res) => {
   } catch (error) { throw error; }
 });
 
+// Free videos are platform-owned content. They have no campaign budget,
+// completion tracking, or viewer reward and stay separate from paid campaigns.
+app.get("/api/free-videos", requireUser, async (_req, res) => {
+  const videos = await db.prepare(`
+    SELECT id, title, advertiser, description, video_url, destination_url, duration_seconds, published_at
+    FROM free_videos WHERE status = 'published' ORDER BY id DESC
+  `).all();
+  res.json(videos);
+});
+
+app.get("/api/admin/free-videos", requireAdmin, async (_req, res) => {
+  const videos = await db.prepare(`
+    SELECT id, title, advertiser, description, video_url, destination_url, duration_seconds,
+      status, created_at, published_at
+    FROM free_videos ORDER BY id DESC
+  `).all();
+  res.json(videos);
+});
+
+app.post("/api/admin/free-videos", requireAdmin, async (req, res) => {
+  const title = typeof req.body.title === "string" ? req.body.title.trim() : "";
+  const advertiser = typeof req.body.advertiser === "string" ? req.body.advertiser.trim() : "";
+  const description = typeof req.body.description === "string" ? req.body.description.trim() : "";
+  const videoUrl = typeof req.body.videoUrl === "string" ? req.body.videoUrl.trim() : "";
+  const destinationUrl = typeof req.body.destinationUrl === "string" ? req.body.destinationUrl.trim() : "";
+  const duration = Number(req.body.durationSeconds);
+  const isHttpUrl = value => { try { return ["http:", "https:"].includes(new URL(value).protocol); } catch { return false; } };
+  const isLocalVideo = /^\/videos\/[A-Za-z0-9._-]+\.mp4$/i.test(videoUrl);
+  if (!title || title.length > 150 || advertiser.length > 150 || description.length > 2000 ||
+      !(isLocalVideo || isHttpUrl(videoUrl)) || (destinationUrl && !isHttpUrl(destinationUrl)) ||
+      !Number.isSafeInteger(duration) || duration < 1 || duration > 86400) {
+    return res.status(400).json({ error: "Enter a title, valid video URL, optional HTTP(S) destination, and duration between 1 and 86400 seconds." });
+  }
+  try {
+    const result = await db.prepare(`
+      INSERT INTO free_videos (title, advertiser, description, video_url, destination_url, duration_seconds, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(title, advertiser, description, videoUrl, destinationUrl, duration, req.session.user.id);
+    await writeAudit(req.session.user.id, "free_video.created", "free_video", result.lastInsertRowid,
+      { title, videoUrl, destinationUrl, durationSeconds: duration, status: "draft", viewerRewardRc: 0, budgetKobo: 0 });
+    res.status(201).json({ ok: true, id: result.lastInsertRowid, status: "draft", viewerRewardRc: 0, budgetKobo: 0 });
+  } catch (error) {
+    if (error.code === "23505") return res.status(409).json({ error: "A free video with that video URL already exists." });
+    throw error;
+  }
+});
+
+app.patch("/api/admin/free-videos/:id", requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const status = req.body.status;
+  if (!Number.isSafeInteger(id) || id < 1 || !["draft", "published"].includes(status)) {
+    return res.status(400).json({ error: "Choose a valid free video and publication status." });
+  }
+  const existing = await db.prepare("SELECT id, title, status FROM free_videos WHERE id = ?").get(id);
+  if (!existing) return res.status(404).json({ error: "Free video not found." });
+  await db.prepare(`
+    UPDATE free_videos SET status = ?, published_at = CASE WHEN ? = 'published' THEN COALESCE(published_at, NOW()) ELSE NULL END
+    WHERE id = ?
+  `).run(status, status, id);
+  await writeAudit(req.session.user.id, status === "published" ? "free_video.published" : "free_video.unpublished",
+    "free_video", id, { title: existing.title, previousStatus: existing.status, status, viewerRewardRc: 0, budgetKobo: 0 });
+  res.json({ ok: true, id, status, viewerRewardRc: 0, budgetKobo: 0 });
+});
+
 // Record money the administrator has already verified in the business bank
 // account. This endpoint never initiates a payment or treats a claim as proof.
 app.post("/api/admin/campaigns/:id/direct-funding", requireAdmin, async (req, res) => {
