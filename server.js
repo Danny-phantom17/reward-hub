@@ -444,7 +444,9 @@ app.get("/api/campaigns", requireUser, async (req, res) => {
     (event_id, campaign_id, user_id, event_type, details) VALUES (?, ?, ?, 'impression', '{}')`);
   for (const campaign of campaigns) recordImpression.run(`impression-${campaign.id}-${req.session.user.id}`, campaign.id, req.session.user.id);
   res.json(campaigns.map(campaign => {
-    const { reward_rate_rc, reward_rate_kobo, ...visibleCampaign } = campaign;
+    const { reward_rate_rc, reward_rate_kobo, budget, advertiser_budget_kobo, funded_kobo, reward_budget_rc,
+      viewer_reward_allocation_kobo, platform_allocation_kobo, operating_reserve_kobo,
+      reward_allocation_bps, platform_allocation_bps, operating_reserve_bps, ...visibleCampaign } = campaign;
     return visibleCampaign;
   }));
 });
@@ -469,7 +471,9 @@ app.get("/api/campaigns/:id", requireUser, async (req, res) => {
   if (!campaign.active || campaign.reward <= 0 || campaign.reward_budget_rc < campaign.reward) {
     return res.status(409).json({ error: "This campaign is not currently available." });
   }
-  const { reward_rate_rc, reward_rate_kobo, ...visibleCampaign } = campaign;
+  const { reward_rate_rc, reward_rate_kobo, budget, advertiser_budget_kobo, funded_kobo, reward_budget_rc,
+    viewer_reward_allocation_kobo, platform_allocation_kobo, operating_reserve_kobo,
+    reward_allocation_bps, platform_allocation_bps, operating_reserve_bps, ...visibleCampaign } = campaign;
   res.json(visibleCampaign);
 });
 
@@ -1493,11 +1497,8 @@ app.post("/api/admin/managed-campaigns", requireAdmin, async (req, res) => {
 // Free videos are platform-owned content. They have no campaign budget,
 // completion tracking, or viewer reward and stay separate from paid campaigns.
 app.get("/api/free-videos", async (_req, res) => {
-  const videos = await db.prepare(`
-    SELECT id, title, advertiser, description, video_url, destination_url, duration_seconds, published_at
-    FROM free_videos WHERE status = 'published' ORDER BY id DESC
-  `).all();
-  res.json(videos);
+  // Legacy uploads are no longer exposed as no-reward viewer videos.
+  res.json([]);
 });
 
 app.get("/api/free-videos/media/:id", async (req, res) => {
@@ -1636,6 +1637,51 @@ app.patch("/api/admin/free-videos/:id", requireAdmin, async (req, res) => {
   await writeAudit(req.session.user.id, status === "published" ? "free_video.published" : "free_video.unpublished",
     "free_video", id, { title: existing.title, previousStatus: existing.status, status, viewerRewardRc: 0, budgetKobo: 0 });
   res.json({ ok: true, id, status, viewerRewardRc: 0, budgetKobo: 0 });
+});
+
+app.post("/api/admin/free-videos/:id/promote", requireAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  const budgetNgn = Number(req.body.budgetNgn);
+  const budgetKobo = budgetNgn * 100;
+  const reward = Number(req.body.rewardRc);
+  if (!Number.isSafeInteger(id) || id < 1 || !Number.isSafeInteger(budgetNgn) || budgetNgn < 1 ||
+      !Number.isSafeInteger(budgetKobo) || !Number.isSafeInteger(reward) || reward < 1) {
+    return res.status(400).json({ error: "Enter a positive whole-naira campaign budget and viewer reward." });
+  }
+  const video = await db.prepare(`
+    SELECT id, title, advertiser, description, video_url, destination_url, duration_seconds
+    FROM free_videos WHERE id = ?
+  `).get(id);
+  if (!video) return res.status(404).json({ error: "Uploaded video not found." });
+  if (await db.prepare("SELECT id FROM campaigns WHERE video_url = ? LIMIT 1").get(video.video_url)) {
+    return res.status(409).json({ error: "This video has already been added as a campaign." });
+  }
+  const allocation = await campaignBudgetAllocation(budgetKobo);
+  if (!allocation) return res.status(503).json({ error: "Campaign allocation settings must total exactly 100%. Contact platform support." });
+  const { rewardBudgetRc, viewerBps, platformBps, reserveBps, viewerKobo, platformKobo, reserveKobo, rateRc, rateKobo } = allocation;
+  if (rewardBudgetRc < reward) return res.status(400).json({ error: "This campaign budget does not cover even one completion at the selected viewer reward." });
+  const advertiser = video.advertiser || "Reward Hub";
+  let campaignId;
+  await db.transaction(async () => {
+    const result = await db.prepare(`
+      INSERT INTO campaigns
+        (title, advertiser, description, video_url, destination_url, reward, duration_seconds, budget, active, status,
+         advertiser_user_id, objective, qualifying_rules, approval_status, funding_status, advertiser_budget_kobo,
+         funded_kobo, reward_budget_rc, reward_allocation_bps, platform_allocation_bps, operating_reserve_bps,
+         website_engagement_seconds, action_type, action_reward_rc, max_action_rewards, viewer_reward_allocation_kobo,
+         platform_allocation_kobo, operating_reserve_kobo, reward_rate_rc, reward_rate_kobo, target_completions)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 'pending_review', NULL, 'video_visibility', ?, 'pending_review', 'unfunded', ?, 0,
+        ?, ?, ?, ?, ?, 'none', 0, 0, ?, ?, ?, ?, ?, 0)
+    `).run(video.title, advertiser, video.description || "", video.video_url, video.destination_url || "", reward,
+      video.duration_seconds, rewardBudgetRc,
+      "Watch at least 90% of this sponsored video. Rewards are credited to the viewer wallet after completion review.",
+      budgetKobo, rewardBudgetRc, viewerBps, platformBps, reserveBps, ACTION_DWELL_SECONDS,
+      viewerKobo, platformKobo, reserveKobo, rateRc, rateKobo);
+    campaignId = result.lastInsertRowid;
+    await writeAudit(req.session.user.id, "campaign.created_from_uploaded_video", "campaign", campaignId,
+      { sourceVideoId: video.id, advertiserBudgetKobo: budgetKobo, rewardBudgetRc, viewerRewardRc: reward });
+  }).immediate();
+  res.status(201).json({ ok: true, id: campaignId, status: "pending_review", fundingStatus: "unfunded", rewardBudgetRc });
 });
 
 // Record money the administrator has already verified in the business bank
